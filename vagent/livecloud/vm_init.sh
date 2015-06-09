@@ -209,6 +209,27 @@ function config_debian_vagent_respawn() {
     init q
 }
 
+function config_debian8_vagent_respawn() {
+    cat << 'string' > /lib/systemd/system/vagent.service
+[Unit]
+Description=Livecloud vagent
+After=syslog.target network.target auditd.service sshd.service
+
+[Service]
+ExecStart=/usr/bin/python /usr/local/vagent/vagent.py -d -l
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+string
+
+    systemctl enable vagent.service
+    systemctl restart vagent.service
+}
+
 function config_ubuntu_vagent_respawn() {
     cat << string >/etc/init/vagent.conf
 start on runlevel [2345]
@@ -264,7 +285,13 @@ function install_vagent() {
             log "Unknown or not supported RHEL/CentOS"
         fi
     elif [[ -n "`echo $issue | grep -i debian`" ]]; then
-        config_debian_vagent_respawn
+        if [[ -n "`echo $issue | grep -i 'Linux\s7'`" ]]; then
+            config_debian_vagent_respawn
+        elif [[ -n "`echo $issue | grep -i 'Linux\s8'`" ]]; then
+            config_debian8_vagent_respawn
+        else
+            log "Unknown or not supported Debian"
+        fi
     elif [[ -n "`echo $issue | grep -i ubuntu`" ]]; then
         config_ubuntu_vagent_respawn
     elif [[ -n "`echo $issue | grep -i SUSE`" ]]; then
