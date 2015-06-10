@@ -138,6 +138,25 @@ string
     service network restart
 }
 
+function change_centos7_ipaddr() {
+    cat << string >/etc/sysconfig/network
+NETWORKING=yes
+HOSTNAME=$HOSTNAME
+string
+    hostname $HOSTNAME
+
+    cat << string >/etc/sysconfig/network-scripts/ifcfg-$DEVICE
+DEVICE=$DEVICE
+BOOTPROTO=static
+HWADDR=$MAC
+IPADDR=$IPADDR
+NETMASK=`masklen2netmask $MASKLEN`
+ONBOOT=yes
+string
+
+    systemctl restart NetworkManager
+}
+
 function change_suse_ipaddr() {
     hostnamectl set-hostname $HOSTNAME
 
@@ -180,6 +199,8 @@ function change_ipaddr() {
     issue=`cat /etc/issue`
     if [[ -n "`echo $issue | grep -iE 'centos|red hat'`" ]]; then
         change_centos_ipaddr
+    elif [[ -n "`echo $issue | grep -iE 'kernel'`" ]]; then
+        change_centos_ipaddr
     elif [[ -n "`echo $issue | grep -i debian`" ]]; then
         change_debian_ipaddr
     elif [[ -n "`echo $issue | grep -i ubuntu`" ]]; then
@@ -201,6 +222,27 @@ exec /usr/bin/python /usr/local/vagent/vagent.py -d -l
 string
 
     initctl start vagent >/dev/null 2>&1
+}
+
+function config_centos7_vagent_respawn() {
+    cat << 'string' >/usr/lib/systemd/system/vagent.service
+[Unit]
+Description=Livecloud vagent
+After=syslog.target network.target auditd.service sshd.service
+
+[Service]
+ExecStart=/usr/bin/python /usr/local/vagent/vagent.py -d -l
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+string
+
+    systemctl enable vagent.service
+    systemctl restart vagent.service
 }
 
 function config_debian_vagent_respawn() {
@@ -276,11 +318,13 @@ function install_vagent() {
     cd $directory
 
     issue=`cat /etc/issue`
-    if [[ -n "`echo $issue | grep -iE 'centos|red hat'`" ]]; then
+    if [[ -n "`echo $issue | grep -iE 'centos|red hat|kernel'`" ]]; then
         if [[ -n "`echo $issue | grep -i 'release\s6'`" ]]; then
             config_centos_vagent_respawn
         elif [[ -n "`echo $issue | grep -i 'release\s5'`" ]]; then
             config_debian_vagent_respawn
+        elif [[ -n "`echo $issue | grep -i 'kernel'`" ]]; then
+            config_centos7_vagent_respawn
         else
             log "Unknown or not supported RHEL/CentOS"
         fi
