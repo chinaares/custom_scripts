@@ -284,6 +284,27 @@ string
     start vagent >/dev/null 2>&1
 }
 
+function config_ubuntu15_vagent_respawn() {
+    cat << 'string' > /lib/systemd/system/vagent.service
+[Unit]
+Description=Livecloud vagent
+After=syslog.target network.target auditd.service sshd.service
+
+[Service]
+ExecStart=/usr/bin/python /usr/local/vagent/vagent.py -d -l
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+string
+
+    systemctl enable vagent.service
+    systemctl restart vagent.service
+}
+
 function config_suse_vagent_respawn() {
     cat << 'string' >/usr/lib/systemd/system/vagent.service
 [Unit]
@@ -337,7 +358,11 @@ function install_vagent() {
             log "Unknown or not supported Debian"
         fi
     elif [[ -n "`echo $issue | grep -i ubuntu`" ]]; then
-        config_ubuntu_vagent_respawn
+        if [[ -n "`echo $issue | grep -i 'ubuntu\s15'`" ]]; then
+            config_ubuntu15_vagent_respawn
+        else
+            config_ubuntu_vagent_respawn
+        fi      
     elif [[ -n "`echo $issue | grep -i SUSE`" ]]; then
         config_suse_vagent_respawn
     else
