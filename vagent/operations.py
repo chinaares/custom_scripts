@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import tempfile
+import json
 
 from config import Config
 
@@ -43,10 +44,10 @@ def call_system_sh_check(args):
     assert isinstance(args, list)
     cmd = ' '.join(args)
     log.debug(cmd)
-    (_, err) = subprocess.Popen(cmd,
-                                shell=True,
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE).communicate()
+    (out, err) = subprocess.Popen(cmd,
+                                  shell=True,
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE).communicate()
     if err:
         log.debug('[%s] failed: %s' % (cmd, err))
         return False
@@ -110,7 +111,7 @@ class Operations(object):
         if re.match(cls.IP_REGEX, ip) is None:
             return False
         (ipaddr, masklen) = ip.split('/')
-        (a, b, c, d) = [int(string) for string in ipaddr.split('.')]
+        (a, b, c, d) = [int(str) for str in ipaddr.split('.')]
         ip_bin = (a << 24) + (b << 16) + (c << 8) + d
         if ip_bin & (0xFFFFFFFF >> int(masklen)):
             return False
@@ -118,11 +119,11 @@ class Operations(object):
 
     @classmethod
     def in_same_subnet(cls, ip1, ip2, netmask):
-        (a, b, c, d) = [int(stri) for stri in ip1.split('.')]
+        (a, b, c, d) = [int(str) for str in ip1.split('.')]
         ip1_bin = (a << 24) + (b << 16) + (c << 8) + d
-        (a, b, c, d) = [int(stri) for stri in ip2.split('.')]
+        (a, b, c, d) = [int(str) for str in ip2.split('.')]
         ip2_bin = (a << 24) + (b << 16) + (c << 8) + d
-        (a, b, c, d) = [int(stri) for stri in netmask.split('.')]
+        (a, b, c, d) = [int(str) for str in netmask.split('.')]
         netmask_bin = (a << 24) + (b << 16) + (c << 8) + d
         if (ip1_bin & netmask_bin) == (ip2_bin & netmask_bin):
             return True
@@ -775,6 +776,7 @@ class UbuntuOperations(LinuxOperations):
 
 class WindowsOperations(Operations):
     name_table = {}
+    PS_CMD = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
 
     @classmethod
     def get_name_by_mac(cls, mac):
@@ -803,7 +805,7 @@ class WindowsOperations(Operations):
         args = ['netsh', 'interface', 'ip', 'dump']
         out = call_system_output(args)
         if out:
-            (ipaddr, _) = ip.split('/')
+            (ipaddr, masklen) = ip.split('/')
             regex = 'add address.*%s' % ipaddr.replace('.', '\.')
             if re.search(regex, out) is None:
                 return False
@@ -860,7 +862,7 @@ class WindowsOperations(Operations):
 
     @classmethod
     def del_ip(cls, dev, ip):
-        (ipaddr, _) = ip.split('/')
+        (ipaddr, masklen) = ip.split('/')
         if not call_windows_system_check(
                 ['netsh', 'interface', 'ip', 'delete', 'address',
                  dev, ipaddr]):
@@ -922,3 +924,14 @@ class WindowsOperations(Operations):
     @classmethod
     def check_block_device_unmounted(cls, dev_name):
             return True
+
+    @classmethod
+    def get_azure_backup_usage(cls):
+        args = [cls.PS_CMD, "-ExecutionPolicy", "Unrestricted",
+                "Get-OBMachineUsage", "|", "ConvertTo-Json"]
+        out = call_system_output(args)
+        if out:
+            usage_info = json.loads(out)
+            if 'StorageUsedByMachineInBytes' in usage_info:
+                return usage_info['StorageUsedByMachineInBytes']
+        return 0

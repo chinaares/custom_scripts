@@ -6,6 +6,9 @@ import os
 import platform
 import signal
 import sys
+import win32serviceutil
+import win32service
+import win32event
 
 from config import Config
 from functions import Handler, Server
@@ -61,6 +64,91 @@ def sigterm_handler(signal, frame):
     sys.exit(0)
 
 
+class HttpServerManager(win32serviceutil.ServiceFramework):
+    _svc_name_ = "vagent"
+    _svc_display_name_ = "vagent"
+    _http_server = None
+
+    def __init__(self, args):
+        win32serviceutil.ServiceFramework.__init__(self, args)
+        self.hWaitStop = win32event.CreateEvent(None, 0, 0, None)
+        self._http_server = Server(('', PORT), Handler, logRequests=False)
+        self._http_server.register_introspection_functions()
+        self._http_server.register_multicall_functions()
+        from operations import WindowsOperations
+        from functions import WindowsFunctions
+        WindowsOperations.apply_config()
+        self._http_server.register_instance(WindowsFunctions())
+        print 'Service start.'
+
+    def SvcDoRun(self):
+        import servicemanager
+        servicemanager.LogMsg(servicemanager.EVENTLOG_INFORMATION_TYPE,
+                              servicemanager.PYS_SERVICE_STARTED,
+                              (self._svc_name_, ''))
+        self._http_server.serve_forever()
+        return
+
+    def SvcStop(self):
+        self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
+        self._http_server.stop()
+        win32event.SetEvent(self.hWaitStop)
+        print 'Service stop'
+        return
+
+
+def serve_linux(daemon=False, do_log=False):
+    server = Server(('', PORT), Handler, logRequests=False)
+    server.register_introspection_functions()
+    server.register_multicall_functions()
+
+    Config.filename = \
+        os.path.dirname(os.path.realpath(__file__)) + '/config.xml'
+    Config.read_conf()
+    Config.write_conf()
+
+    if daemon and os.getppid() != 1:
+        daemonize()
+    signal.signal(signal.SIGTERM, sigterm_handler)
+
+    dist = platform.dist()[0].lower()
+    if dist in ['centos', 'redhat']:
+        try:
+            from lb_operations import LBCentOSOperations
+            from lb_functions import LBCentOSFunctions
+            LBCentOSOperations.apply_config()
+            server.register_instance(LBCentOSFunctions())
+            dist = 'centos-lb'
+        except:
+            from operations import CentOSOperations
+            from functions import CentOSFunctions
+            CentOSOperations.apply_config()
+            server.register_instance(CentOSFunctions())
+    elif dist == 'debian':
+        from operations import DebianOperations
+        from functions import DebianFunctions
+        DebianOperations.apply_config()
+        server.register_instance(DebianFunctions())
+    elif dist == 'ubuntu':
+        from operations import UbuntuOperations
+        from functions import UbuntuFunctions
+        UbuntuOperations.apply_config()
+        server.register_instance(UbuntuFunctions())
+    else:
+        sys.stderr.write('System (%s, %s) not supported\n' % (system, dist))
+        sys.exit(-1)
+
+    log.info('Agent started for (%s, %s)' % (system, dist))
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        os.kill(os.getpid(), signal.SIGTERM)
+
+
+def serve_windows():
+    win32serviceutil.HandleCommandLine(HttpServerManager)
+
+
 if __name__ == '__main__':
     # daemonize
     daemon = True if '-d' in sys.argv else False
@@ -97,63 +185,7 @@ if __name__ == '__main__':
 
     # Linux or Windows
     system = platform.system().lower()
-    dist = ''
     if system == 'linux':
-        # centos or debian or ...
-        dist = platform.dist()[0].lower()
-
-    server = Server(('', PORT), Handler, logRequests=False)
-    server.register_introspection_functions()
-    server.register_multicall_functions()
-
-    Config.filename = \
-        os.path.dirname(os.path.realpath(__file__)) + '/config.xml'
-    Config.read_conf()
-    Config.write_conf()
-
-    if system == 'linux' and daemon and os.getppid() != 1:
-        daemonize()
-
-    signal.signal(signal.SIGTERM, sigterm_handler)
-
-    if system == 'linux' and dist in ['centos', 'redhat']:
-        try:
-            from lb_operations import LBCentOSOperations
-            from lb_functions import LBCentOSFunctions
-            LBCentOSOperations.apply_config()
-            server.register_instance(LBCentOSFunctions())
-            dist = 'centos-lb'
-        except:
-            from operations import CentOSOperations
-            from functions import CentOSFunctions
-            CentOSOperations.apply_config()
-            server.register_instance(CentOSFunctions())
-    elif system == 'linux' and dist == 'debian':
-        from operations import DebianOperations
-        from functions import DebianFunctions
-        DebianOperations.apply_config()
-        server.register_instance(DebianFunctions())
-    elif system == 'linux' and dist == 'ubuntu':
-        from operations import UbuntuOperations
-        from functions import UbuntuFunctions
-        UbuntuOperations.apply_config()
-        server.register_instance(UbuntuFunctions())
-    elif system == 'linux' and dist == 'suse':
-        from operations import SuseOperations
-        from functions import SuseFunctions
-        SuseOperations.apply_config()
-        server.register_instance(SuseFunctions())
+        serve_linux(daemon, do_log)
     elif system == 'windows':
-        from operations import WindowsOperations
-        from functions import WindowsFunctions
-        WindowsOperations.apply_config()
-        server.register_instance(WindowsFunctions())
-    else:
-        sys.stderr.write('System (%s, %s) not supported\n' % (system, dist))
-        sys.exit(-1)
-
-    log.info('Agent started for (%s, %s)' % (system, dist))
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        os.kill(os.getpid(), signal.SIGTERM)
+        serve_windows()
