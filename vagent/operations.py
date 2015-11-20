@@ -11,6 +11,8 @@ from config import Config
 
 log = logging.getLogger(__name__)
 
+DNS = '114.114.114.114'
+
 
 def call_system_check(args):
     assert isinstance(args, list)
@@ -44,10 +46,10 @@ def call_system_sh_check(args):
     assert isinstance(args, list)
     cmd = ' '.join(args)
     log.debug(cmd)
-    (out, err) = subprocess.Popen(cmd,
-                                  shell=True,
-                                  stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE).communicate()
+    (_, err) = subprocess.Popen(cmd,
+                                shell=True,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE).communicate()
     if err:
         log.debug('[%s] failed: %s' % (cmd, err))
         return False
@@ -74,6 +76,16 @@ def call_system_sh_output(args):
     if err:
         log.debug('[%s] failed: %s' % (args, err))
     return out
+
+
+def call_system_output_no_log(args):
+    assert isinstance(args, list)
+    (out, err) = subprocess.Popen(args,
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE).communicate()
+    if err:
+        return (False, err)
+    return (True, out)
 
 
 def string_enum(*sequential, **named):
@@ -111,7 +123,7 @@ class Operations(object):
         if re.match(cls.IP_REGEX, ip) is None:
             return False
         (ipaddr, masklen) = ip.split('/')
-        (a, b, c, d) = [int(str) for str in ipaddr.split('.')]
+        (a, b, c, d) = [int(_str) for _str in ipaddr.split('.')]
         ip_bin = (a << 24) + (b << 16) + (c << 8) + d
         if ip_bin & (0xFFFFFFFF >> int(masklen)):
             return False
@@ -119,11 +131,11 @@ class Operations(object):
 
     @classmethod
     def in_same_subnet(cls, ip1, ip2, netmask):
-        (a, b, c, d) = [int(str) for str in ip1.split('.')]
+        (a, b, c, d) = [int(_str) for _str in ip1.split('.')]
         ip1_bin = (a << 24) + (b << 16) + (c << 8) + d
-        (a, b, c, d) = [int(str) for str in ip2.split('.')]
+        (a, b, c, d) = [int(_str) for _str in ip2.split('.')]
         ip2_bin = (a << 24) + (b << 16) + (c << 8) + d
-        (a, b, c, d) = [int(str) for str in netmask.split('.')]
+        (a, b, c, d) = [int(_str) for _str in netmask.split('.')]
         netmask_bin = (a << 24) + (b << 16) + (c << 8) + d
         if (ip1_bin & netmask_bin) == (ip2_bin & netmask_bin):
             return True
@@ -163,6 +175,7 @@ class Operations(object):
                 if device is None:
                     continue
                 cls.flush_ip(device)
+                cls.disable_offload(device)
                 cls.config_ip(device, interface.primary_ip)
                 cls.write_ip_config(device, interface.primary_ip)
                 for ip in interface.secondary_ips:
@@ -245,6 +258,19 @@ class LinuxOperations(Operations):
             log.debug('Route for %s exists' % node)
             return True
         return False
+
+    @classmethod
+    def disable_offload(cls, dev):
+        # only disable offload in xenserver vms
+        if not call_system_sh_check(
+                ['ps', 'ax', '|', 'grep', '-w', 'qemu-ga', '|',
+                 'grep', '-v', 'grep']):
+            if not call_system_check(
+                    ['/sbin/ethtool', '-K', dev, 'tso', 'off', 'gso', 'off',
+                     'tx', 'off', 'sg', 'off']):
+                log.debug('Disable offload for %s error' % dev)
+                return False
+        return True
 
     @classmethod
     def config_ip(cls, dev, ip):
@@ -375,6 +401,17 @@ BOOTPROTO=static
         return True
 
     @classmethod
+    def init_dns_config(cls):
+        try:
+            if not os.path.isfile('/etc/resolv.conf'):
+                with open('/etc/resolv.conf', 'w') as f:
+                    f.write('nameserver %s' % DNS)
+        except Exception as e:
+            log.debug('init dns error (%s)' % e)
+            return False
+        return True
+
+    @classmethod
     def check_iscsi_service_existance(cls):
         args = ['/sbin/chkconfig', '--list', 'iscsi']
         if not call_system_check(args):
@@ -480,56 +517,6 @@ BOOTPROTO=static
         else:
             log.debug('Device %s is mounted' % dev_name)
             return False
-
-
-class SuseOperations(LinuxOperations):
-    IFCFG_STR = """BOOTPROTO='static'
-BROADCAST=''
-ETHTOOL_OPTIONS=''
-IPADDR='%s'
-NETMASK='%s'
-MTU=''
-NAME='%s'
-NETWORK=''
-REMOTE_IPADDR=''
-STARTMODE='auto'
-USERCONTROL='no'
-"""
-    NETWORK_FILE = '/etc/sysconfig/network/routes'
-
-    @classmethod
-    def write_ip_config(cls, dev, ip):
-        (ipaddr, masklen) = ip.split('/')
-        netmask = cls.masklen2netmask(int(masklen))
-        f = open('/etc/sysconfig/network/ifcfg-%s' % dev, 'w')
-        f.write(cls.IFCFG_STR % (ipaddr, netmask, dev))
-        f.close()
-        return True
-
-    @classmethod
-    def remove_ip_config(cls, dev):
-        filename = '/etc/sysconfig/network/ifcfg-%s' % dev
-        if os.path.isfile(filename):
-            os.remove(filename)
-
-    @classmethod
-    def write_default_route_config(cls, ip):
-        cls.remove_default_route_config()
-        try:
-            with open(cls.NETWORK_FILE, 'a') as f:
-                f.write('default %s - - \n' % ip)
-        except Exception as e:
-            log.debug('write default route config error: %r' % e)
-            return False
-        return True
-
-    @classmethod
-    def remove_default_route_config(cls):
-        args = ['/bin/sed', '-i', r'/default.*/d', cls.NETWORK_FILE]
-        if not call_system_check(args):
-            log.debug('remove default route config error')
-            return False
-        return True
 
 
 class DebianOperations(LinuxOperations):
@@ -669,6 +656,17 @@ iface %s inet static
             return False
         return True
 
+    @classmethod
+    def init_dns_config(cls):
+        try:
+            if not os.path.isfile('/etc/resolv.conf'):
+                with open('/etc/resolv.conf', 'w') as f:
+                    f.write('nameserver %s' % DNS)
+        except Exception as e:
+            log.debug('init dns error (%s)' % e)
+            return False
+        return True
+
 
 class UbuntuOperations(LinuxOperations):
     INITIATORNAME_STR = """InitiatorName=%s
@@ -690,6 +688,21 @@ class UbuntuOperations(LinuxOperations):
     @classmethod
     def remove_default_route_config(cls):
         return DebianOperations.remove_default_route_config()
+
+    @classmethod
+    def init_dns_config(cls):
+        try:
+            with open('/etc/resolvconf/resolv.conf.d/base', 'a+') as f:
+                content = f.read()
+                if content.find('nameserver') == -1:
+                    f.write('nameserver %s' % DNS)
+        except Exception as e:
+            log.debug('init dns conf error (%s)' % e)
+            return False
+        if not call_system_check(['resolvconf', '-u']):
+            log.error('init dns failed')
+            return False
+        return True
 
     @classmethod
     def check_iscsi_service_existance(cls):
@@ -805,7 +818,7 @@ class WindowsOperations(Operations):
         args = ['netsh', 'interface', 'ip', 'dump']
         out = call_system_output(args)
         if out:
-            (ipaddr, masklen) = ip.split('/')
+            (ipaddr, _) = ip.split('/')
             regex = 'add address.*%s' % ipaddr.replace('.', '\.')
             if re.search(regex, out) is None:
                 return False
@@ -839,6 +852,23 @@ class WindowsOperations(Operations):
         return None
 
     @classmethod
+    def disable_offload(cls, dev):
+        # only disable offload in xenserver vms
+        if not call_windows_system_check(
+                ['tasklist', '|', 'findstr', 'qemu-ga.exe']):
+            if not call_windows_system_check(
+                    ['netsh', 'interface', 'ipv4', 'set', 'global',
+                     'taskoffload=disabled']):
+                log.debug('Disable ipv4 offload for %s error' % dev)
+                return False
+            if not call_windows_system_check(
+                    ['netsh', 'interface', 'tcp', 'set', 'global',
+                     'rss=disabled', 'chimney=disabled', 'netdma=disabled']):
+                log.debug('Disable tcp offload for %s error' % dev)
+                return False
+        return True
+
+    @classmethod
     def config_ip(cls, dev, ip):
         (ipaddr, masklen) = ip.split('/')
         netmask = cls.masklen2netmask(int(masklen))
@@ -846,6 +876,11 @@ class WindowsOperations(Operations):
                 ['netsh', 'interface', 'ip', 'set', 'address',
                  dev, 'static', ipaddr, netmask]):
             log.debug('Config IP for %s error' % dev)
+            return False
+        if not call_windows_system_check(
+                ['netsh', 'interface', 'ip', 'set', 'dns',
+                 dev, 'static', DNS]):
+            log.debug('Config DNS for %s error' % dev)
             return False
         return True
 
@@ -862,7 +897,7 @@ class WindowsOperations(Operations):
 
     @classmethod
     def del_ip(cls, dev, ip):
-        (ipaddr, masklen) = ip.split('/')
+        (ipaddr, _) = ip.split('/')
         if not call_windows_system_check(
                 ['netsh', 'interface', 'ip', 'delete', 'address',
                  dev, ipaddr]):
@@ -928,9 +963,15 @@ class WindowsOperations(Operations):
     @classmethod
     def get_azure_backup_usage(cls):
         args = [cls.PS_CMD, "-ExecutionPolicy", "Unrestricted",
+                "Import-Module", "MSOnlineBackup"]
+        ret, _ = call_system_output_no_log(args)
+        if not ret:
+            return 0
+
+        args = [cls.PS_CMD, "-ExecutionPolicy", "Unrestricted",
                 "Get-OBMachineUsage", "|", "ConvertTo-Json"]
-        out = call_system_output(args)
-        if out:
+        ret, out = call_system_output_no_log(args)
+        if ret:
             usage_info = json.loads(out)
             if 'StorageUsedByMachineInBytes' in usage_info:
                 return usage_info['StorageUsedByMachineInBytes']

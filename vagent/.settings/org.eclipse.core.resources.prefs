@@ -3,5 +3,7 @@ encoding/config.py=utf-8
 encoding/functions.py=utf-8
 encoding/lb_functions.py=utf-8
 encoding/lb_operations.py=utf-8
+encoding/op_linux.py=utf-8
+encoding/op_windows.py=utf-8
 encoding/operations.py=utf-8
 encoding/vagent.py=utf-8

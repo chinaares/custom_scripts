@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import platform
 
 from config import Config
 from operations import LinuxOperations as LO
 from operations import CentOSOperations as CO
 from operations import DebianOperations as DO
-from operations import SuseOperations as SO
 from operations import UbuntuOperations as UO
 from operations import WindowsOperations as WO
 import SimpleXMLRPCServer
@@ -62,6 +62,12 @@ class Functions(object):
         return [True, version.VERSION, version.PACKTIME, version.GITCOMMIT]
 
     def upgrade(self, *args, **kwargs):
+        return self.__class__.DEFAULT_REPLY
+
+    def system(self):
+        return [True, platform.system().lower()]
+
+    def azure_backup_usage_get(self):
         return self.__class__.DEFAULT_REPLY
 
 
@@ -137,6 +143,9 @@ class CentOSFunctions(LinuxFunctions):
         if not CO.validate_ip(ip):
             log.error('IP %s is invalid' % ip)
             return [False, 'IP %s is invalid' % ip]
+        if not CO.disable_offload(dev):
+            log.error('Disable offload for %s error' % dev)
+            return [False, 'Disable offload for %s error' % dev]
         if not CO.config_ip(dev, ip):
             log.error('Config IP for %s error' % dev)
             return [False, 'Config IP for %s error' % dev]
@@ -151,8 +160,8 @@ class CentOSFunctions(LinuxFunctions):
         log.info('Deleting all IP address on %s' % mac)
         dev = CO.get_name_by_mac(mac)
         if dev is None:
-            log.error('Device %s is invalid' % mac)
-            return [False, 'Device %s is invalid' % mac]
+            log.info('Device %s is invalid' % mac)
+            return [True, '']
         if not CO.flush_ip(dev):
             log.error('Flush IP for %s error' % dev)
             return [False, 'Flush IP for %s error' % dev]
@@ -289,97 +298,6 @@ class CentOSFunctions(LinuxFunctions):
         return CO.check_block_device_unmounted(dev_name)
 
 
-class SuseFunctions(LinuxFunctions):
-    def ip_config(self, mac, ip):
-        log.info('Setting %s IP address to %s' % (mac, ip))
-        dev = SO.get_name_by_mac(mac)
-        if dev is None:
-            log.error('Device %s is invalid' % mac)
-            return [False, 'Device %s is invalid' % mac]
-        if not SO.validate_ip(ip):
-            log.error('IP %s is invalid' % ip)
-            return [False, 'IP %s is invalid' % ip]
-        if not SO.config_ip(dev, ip):
-            log.error('Config IP for %s error' % dev)
-            return [False, 'Config IP for %s error' % dev]
-        if not SO.write_ip_config(dev, ip):
-            log.error('Write IP config for %s error' % dev)
-            return [True, 'Write IP config for %s error' % dev]
-        Config.config_ip(mac, ip)
-        SO.apply_config()
-        return [True, '']
-
-    def ip_flush(self, mac):
-        log.info('Deleting all IP address on %s' % mac)
-        dev = SO.get_name_by_mac(mac)
-        if dev is None:
-            log.error('Device %s is invalid' % mac)
-            return [False, 'Device %s is invalid' % mac]
-        if not SO.flush_ip(dev):
-            log.error('Flush IP for %s error' % dev)
-            return [False, 'Flush IP for %s error' % dev]
-        SO.remove_ip_config(dev)
-        Config.flush_ip(mac)
-        return [True, '']
-
-    def route_add(self, node, nh, mac):
-        log.info('Adding route for %s' % node)
-        nh = nh if nh else None
-        mac = mac if mac else None
-        if nh is None and mac is None:
-            log.error('No next hop or dev')
-            return [False, 'No next hop or dev']
-        if not node:
-            log.error('Node is empty')
-            return [False, 'Node is empty']
-        if node == 'default':
-            node = '0.0.0.0/0'
-        if not SO.validate_node(node):
-            log.error('Node %s is invalid' % node)
-            return [False, 'Node %s is invalid' % node]
-        if SO.check_node_existance(node):
-            log.error('Node %s is duplicated' % node)
-            return [False, 'Node %s is duplicated' % node]
-        if mac is not None:
-            dev = SO.get_name_by_mac(mac)
-            if dev is None:
-                log.error('Device %s is invalid' % mac)
-                return [False, 'Device %s is invalid' % mac]
-        else:
-            dev = None
-        if nh is not None and not SO.validate_ip(nh + '/32'):
-            log.error('Next hop %s is invalid' % nh)
-            return [False, 'Next hop %s is invalid' % nh]
-        if not SO.add_route(node, nh, mac):
-            log.error('Add route for %s error' % node)
-            return [False, 'Add route for %s error' % node]
-        if node == '0.0.0.0/0':
-            SO.write_default_route_config(nh)
-        Config.add_route(node, nh, mac)
-        return [True, '']
-
-    def route_del(self, node):
-        log.info('Deleting route for %s' % node)
-        if not node:
-            log.error('Node is empty')
-            return [False, 'Node is empty']
-        if node == 'default':
-            node = '0.0.0.0/0'
-        if not SO.validate_node(node):
-            log.error('Node %s is invalid' % node)
-            return [False, 'Node %s is invalid' % node]
-        if not SO.check_node_existance(node):
-            log.error('Node %s not exist' % node)
-            return [False, 'Node %s not exist' % node]
-        if not SO.del_route(node):
-            log.error('Delete route error')
-            return [False, 'Delete route error']
-        if node == '0.0.0.0/0':
-            SO.remove_default_route_config()
-        Config.del_route(node)
-        return [True, '']
-
-
 class DebianFunctions(LinuxFunctions):
     def ip_config(self, mac, ip):
         log.info('Setting %s IP address to %s' % (mac, ip))
@@ -390,6 +308,9 @@ class DebianFunctions(LinuxFunctions):
         if not DO.validate_ip(ip):
             log.error('IP %s is invalid' % ip)
             return [False, 'IP %s is invalid' % ip]
+        if not DO.disable_offload(dev):
+            log.error('Disable offload for %s error' % dev)
+            return [False, 'Disable offload for %s error' % dev]
         if not DO.config_ip(dev, ip):
             log.error('Config IP for %s error' % dev)
             return [False, 'Config IP for %s error' % dev]
@@ -404,8 +325,8 @@ class DebianFunctions(LinuxFunctions):
         log.info('Deleting all IP address on %s' % mac)
         dev = DO.get_name_by_mac(mac)
         if dev is None:
-            log.error('Device %s is invalid' % mac)
-            return [False, 'Device %s is invalid' % mac]
+            log.info('Device %s is invalid' % mac)
+            return [True, '']
         if not DO.flush_ip(dev):
             log.error('Flush IP for %s error' % dev)
             return [False, 'Flush IP for %s error' % dev]
@@ -481,6 +402,9 @@ class UbuntuFunctions(LinuxFunctions):
         if not UO.validate_ip(ip):
             log.error('IP %s is invalid' % ip)
             return [False, 'IP %s is invalid' % ip]
+        if not UO.disable_offload(dev):
+            log.error('Disable offload for %s error' % dev)
+            return [False, 'Disable offload for %s error' % dev]
         if not UO.config_ip(dev, ip):
             log.error('Config IP for %s error' % dev)
             return [False, 'Config IP for %s error' % dev]
@@ -495,8 +419,8 @@ class UbuntuFunctions(LinuxFunctions):
         log.info('Deleting all IP address on %s' % mac)
         dev = UO.get_name_by_mac(mac)
         if dev is None:
-            log.error('Device %s is invalid' % mac)
-            return [False, 'Device %s is invalid' % mac]
+            log.info('Device %s is invalid' % mac)
+            return [True, '']
         if not UO.flush_ip(dev):
             log.error('Flush IP for %s error' % dev)
             return [False, 'Flush IP for %s error' % dev]
@@ -672,7 +596,10 @@ class WindowsFunctions(Functions):
         if dev is None:
             log.error('Device %s is invalid' % mac)
             return [False, 'Device %s is invalid' % mac]
-        if not WO.add_ip(dev, ip):
+        if not WO.disable_offload(dev):
+            log.error('Disable offload for %s error' % dev)
+            return [False, 'Disable offload for %s error' % dev]
+        if not WO.config_ip(dev, ip):
             log.error('Setting IP for %s error' % mac)
             return [False, 'Setting IP for %s error' % mac]
         Config.config_ip(mac, ip)
@@ -682,8 +609,8 @@ class WindowsFunctions(Functions):
         log.info('Deleting all IP address on %s' % mac)
         dev = WO.get_name_by_mac(mac)
         if dev is None:
-            log.error('Device %s is invalid' % mac)
-            return [False, 'Device %s is invalid' % mac]
+            log.info('Device %s is invalid' % mac)
+            return [True, '']
         if not WO.flush_ip(dev):
             log.error('Flush IP for %s error' % mac)
             return [False, 'Flush IP for %s error' % mac]
@@ -766,3 +693,7 @@ class WindowsFunctions(Functions):
 
     def block_device_unmounted(self, dev_name):
         return WO.check_block_device_unmounted(dev_name)
+
+    def azure_backup_usage_get(self):
+        usage = WO.get_azure_backup_usage()
+        return [True, usage]
