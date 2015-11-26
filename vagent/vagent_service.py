@@ -1,6 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+import logging
+
 import win32serviceutil
 import win32service
 import win32event
@@ -8,6 +10,7 @@ from functions import Handler, Server
 
 
 PORT = 12345
+log = logging.getLogger(__name__)
 
 
 class HttpServerManager(win32serviceutil.ServiceFramework):
@@ -45,3 +48,7 @@ class HttpServerManager(win32serviceutil.ServiceFramework):
 
 def serve_windows():
     win32serviceutil.HandleCommandLine(HttpServerManager)
+
+
+if __name__ == '__main__':
+    serve_windows()
