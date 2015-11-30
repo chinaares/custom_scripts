@@ -143,7 +143,7 @@ function change_centos7_ipaddr() {
 NETWORKING=yes
 HOSTNAME=$HOSTNAME
 string
-    hostname $HOSTNAME
+    hostnamectl set-hostname $HOSTNAME
 
     cat << string >/etc/sysconfig/network-scripts/ifcfg-$DEVICE
 DEVICE=$DEVICE
@@ -197,9 +197,7 @@ function change_ubuntu_ipaddr() {
 
 function change_ipaddr() {
     issue=`cat /etc/issue`
-    if [[ -n "`echo $issue | grep -iE 'centos|red hat'`" ]]; then
-        change_centos_ipaddr
-    elif [[ -n "`echo $issue | grep -iE 'kernel'`" ]]; then
+    if [[ -n "`echo $issue | grep -iE 'centos|red hat|kernel'`" ]]; then
         change_centos_ipaddr
     elif [[ -n "`echo $issue | grep -i debian`" ]]; then
         change_debian_ipaddr
@@ -243,6 +241,12 @@ string
 
     systemctl enable vagent.service
     systemctl restart vagent.service
+}
+
+function config_centos5_vagent_respawn() {
+    sed -i '/^va:/d' /etc/inittab
+    echo 'va:2345:respawn:/usr/bin/python26 /usr/local/vagent/vagent.py -d -l' >>/etc/inittab
+    init q
 }
 
 function config_debian_vagent_respawn() {
@@ -340,29 +344,30 @@ function install_vagent() {
 
     issue=`cat /etc/issue`
     if [[ -n "`echo $issue | grep -iE 'centos|red hat|kernel'`" ]]; then
-        if [[ -n "`echo $issue | grep -i 'release\s6'`" ]]; then
+        release=`cat /etc/redhat-release`
+        if [[ -n "`echo $release | grep -iE 'release\s6'`" ]]; then
             config_centos_vagent_respawn
-        elif [[ -n "`echo $issue | grep -i 'release\s5'`" ]]; then
-            config_debian_vagent_respawn
-        elif [[ -n "`echo $issue | grep -i 'kernel'`" ]]; then
+        elif [[ -n "`echo $release | grep -iE 'release\s5'`" ]]; then
+            config_centos5_vagent_respawn
+        elif [[ -n "`echo $release | grep -iE 'release\s7'`" ]]; then
             config_centos7_vagent_respawn
         else
             log "Unknown or not supported RHEL/CentOS"
         fi
     elif [[ -n "`echo $issue | grep -i debian`" ]]; then
-        if [[ -n "`echo $issue | grep -i 'Linux\s7'`" ]]; then
+        if [[ -n "`echo $issue | grep -iE 'Linux\s7'`" ]]; then
             config_debian_vagent_respawn
-        elif [[ -n "`echo $issue | grep -i 'Linux\s8'`" ]]; then
+        elif [[ -n "`echo $issue | grep -iE 'Linux\s8'`" ]]; then
             config_debian8_vagent_respawn
         else
             log "Unknown or not supported Debian"
         fi
     elif [[ -n "`echo $issue | grep -i ubuntu`" ]]; then
-        if [[ -n "`echo $issue | grep -i 'ubuntu\s15'`" ]]; then
+        if [[ -n "`echo $issue | grep -iE 'ubuntu\s15'`" ]]; then
             config_ubuntu15_vagent_respawn
         else
             config_ubuntu_vagent_respawn
-        fi      
+        fi
     elif [[ -n "`echo $issue | grep -i SUSE`" ]]; then
         config_suse_vagent_respawn
     else
