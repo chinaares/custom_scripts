@@ -7,6 +7,8 @@ from config import Config
 from operations import LinuxOperations as LO
 from operations import CentOSOperations as CO
 from operations import DebianOperations as DO
+from operations import SuseOperations as SO
+from operations import ArchOperations as AO
 from operations import UbuntuOperations as UO
 from operations import WindowsOperations as WO
 import SimpleXMLRPCServer
@@ -296,6 +298,188 @@ class CentOSFunctions(LinuxFunctions):
 
     def block_device_unmounted(self, dev_name):
         return CO.check_block_device_unmounted(dev_name)
+
+
+class SuseFunctions(LinuxFunctions):
+    def ip_config(self, mac, ip):
+        log.info('Setting %s IP address to %s' % (mac, ip))
+        dev = SO.get_name_by_mac(mac)
+        if dev is None:
+            log.error('Device %s is invalid' % mac)
+            return [False, 'Device %s is invalid' % mac]
+        if not SO.validate_ip(ip):
+            log.error('IP %s is invalid' % ip)
+            return [False, 'IP %s is invalid' % ip]
+        if not SO.config_ip(dev, ip):
+            log.error('Config IP for %s error' % dev)
+            return [False, 'Config IP for %s error' % dev]
+        if not SO.write_ip_config(dev, ip):
+            log.error('Write IP config for %s error' % dev)
+            return [True, 'Write IP config for %s error' % dev]
+        Config.config_ip(mac, ip)
+        SO.apply_config()
+        return [True, '']
+
+    def ip_flush(self, mac):
+        log.info('Deleting all IP address on %s' % mac)
+        dev = SO.get_name_by_mac(mac)
+        if dev is None:
+            log.error('Device %s is invalid' % mac)
+            return [False, 'Device %s is invalid' % mac]
+        if not SO.flush_ip(dev):
+            log.error('Flush IP for %s error' % dev)
+            return [False, 'Flush IP for %s error' % dev]
+        SO.remove_ip_config(dev)
+        Config.flush_ip(mac)
+        return [True, '']
+
+    def route_add(self, node, nh, mac):
+        log.info('Adding route for %s' % node)
+        nh = nh if nh else None
+        mac = mac if mac else None
+        if nh is None and mac is None:
+            log.error('No next hop or dev')
+            return [False, 'No next hop or dev']
+        if not node:
+            log.error('Node is empty')
+            return [False, 'Node is empty']
+        if node == 'default':
+            node = '0.0.0.0/0'
+        if not SO.validate_node(node):
+            log.error('Node %s is invalid' % node)
+            return [False, 'Node %s is invalid' % node]
+        if SO.check_node_existance(node):
+            log.error('Node %s is duplicated' % node)
+            return [False, 'Node %s is duplicated' % node]
+        if mac is not None:
+            dev = SO.get_name_by_mac(mac)
+            if dev is None:
+                log.error('Device %s is invalid' % mac)
+                return [False, 'Device %s is invalid' % mac]
+        else:
+            dev = None
+        if nh is not None and not SO.validate_ip(nh + '/32'):
+            log.error('Next hop %s is invalid' % nh)
+            return [False, 'Next hop %s is invalid' % nh]
+        if not SO.add_route(node, nh, mac):
+            log.error('Add route for %s error' % node)
+            return [False, 'Add route for %s error' % node]
+        if node == '0.0.0.0/0':
+            SO.write_default_route_config(nh)
+        Config.add_route(node, nh, mac)
+        return [True, '']
+
+    def route_del(self, node):
+        log.info('Deleting route for %s' % node)
+        if not node:
+            log.error('Node is empty')
+            return [False, 'Node is empty']
+        if node == 'default':
+            node = '0.0.0.0/0'
+        if not SO.validate_node(node):
+            log.error('Node %s is invalid' % node)
+            return [False, 'Node %s is invalid' % node]
+        if not SO.check_node_existance(node):
+            log.error('Node %s not exist' % node)
+            return [False, 'Node %s not exist' % node]
+        if not SO.del_route(node):
+            log.error('Delete route error')
+            return [False, 'Delete route error']
+        if node == '0.0.0.0/0':
+            SO.remove_default_route_config()
+        Config.del_route(node)
+        return [True, '']
+
+
+class ArchFunctions(LinuxFunctions):
+    def ip_config(self, mac, ip):
+        log.info('Setting %s IP address to %s' % (mac, ip))
+        dev = AO.get_name_by_mac(mac)
+        if dev is None:
+            log.error('Device %s is invalid' % mac)
+            return [False, 'Device %s is invalid' % mac]
+        if not AO.validate_ip(ip):
+            log.error('IP %s is invalid' % ip)
+            return [False, 'IP %s is invalid' % ip]
+        if not AO.config_ip(dev, ip):
+            log.error('Config IP for %s error' % dev)
+            return [False, 'Config IP for %s error' % dev]
+        if not AO.write_ip_config(dev, ip):
+            log.error('Write IP config for %s error' % dev)
+            return [True, 'Write IP config for %s error' % dev]
+        Config.config_ip(mac, ip)
+        AO.apply_config()
+        return [True, '']
+
+    def ip_flush(self, mac):
+        log.info('Deleting all IP address on %s' % mac)
+        dev = AO.get_name_by_mac(mac)
+        if dev is None:
+            log.error('Device %s is invalid' % mac)
+            return [False, 'Device %s is invalid' % mac]
+        if not AO.flush_ip(dev):
+            log.error('Flush IP for %s error' % dev)
+            return [False, 'Flush IP for %s error' % dev]
+        AO.remove_ip_config(dev)
+        Config.flush_ip(mac)
+        return [True, '']
+
+    def route_add(self, node, nh, mac):
+        log.info('Adding route for %s' % node)
+        nh = nh if nh else None
+        mac = mac if mac else None
+        if nh is None and mac is None:
+            log.error('No next hop or dev')
+            return [False, 'No next hop or dev']
+        if not node:
+            log.error('Node is empty')
+            return [False, 'Node is empty']
+        if node == 'default':
+            node = '0.0.0.0/0'
+        if not AO.validate_node(node):
+            log.error('Node %s is invalid' % node)
+            return [False, 'Node %s is invalid' % node]
+        if AO.check_node_existance(node):
+            log.error('Node %s is duplicated' % node)
+            return [False, 'Node %s is duplicated' % node]
+        if mac is not None:
+            dev = AO.get_name_by_mac(mac)
+            if dev is None:
+                log.error('Device %s is invalid' % mac)
+                return [False, 'Device %s is invalid' % mac]
+        else:
+            dev = None
+        if nh is not None and not SO.validate_ip(nh + '/32'):
+            log.error('Next hop %s is invalid' % nh)
+            return [False, 'Next hop %s is invalid' % nh]
+        if not AO.add_route(node, nh, mac):
+            log.error('Add route for %s error' % node)
+            return [False, 'Add route for %s error' % node]
+        if node == '0.0.0.0/0':
+            AO.write_default_route_config(dev, nh)
+        Config.add_route(node, nh, mac)
+        return [True, '']
+
+    def route_del(self, node):
+        log.info('Deleting route for %s' % node)
+        if not node:
+            log.error('Node is empty')
+            return [False, 'Node is empty']
+        if node == 'default':
+            node = '0.0.0.0/0'
+        if not AO.validate_node(node):
+            log.error('Node %s is invalid' % node)
+            return [False, 'Node %s is invalid' % node]
+        if not AO.check_node_existance(node):
+            log.error('Node %s not exist' % node)
+            return [False, 'Node %s not exist' % node]
+        if not AO.del_route(node):
+            log.error('Delete route error')
+            return [False, 'Delete route error']
+        if node == '0.0.0.0/0':
+            AO.remove_default_route_config()
+        Config.del_route(node)
+        return [True, '']
 
 
 class DebianFunctions(LinuxFunctions):

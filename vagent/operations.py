@@ -519,6 +519,120 @@ BOOTPROTO=static
             return False
 
 
+class SuseOperations(LinuxOperations):
+    IFCFG_STR = """BOOTPROTO='static'
+BROADCAST=''
+ETHTOOL_OPTIONS=''
+IPADDR='%s'
+NETMASK='%s'
+MTU=''
+NAME='%s'
+NETWORK=''
+REMOTE_IPADDR=''
+STARTMODE='auto'
+USERCONTROL='no'
+"""
+    NETWORK_FILE = '/etc/sysconfig/network/routes'
+
+    @classmethod
+    def write_ip_config(cls, dev, ip):
+        (ipaddr, masklen) = ip.split('/')
+        netmask = cls.masklen2netmask(int(masklen))
+        f = open('/etc/sysconfig/network/ifcfg-%s' % dev, 'w')
+        f.write(cls.IFCFG_STR % (ipaddr, netmask, dev))
+        f.close()
+        return True
+
+    @classmethod
+    def remove_ip_config(cls, dev):
+        filename = '/etc/sysconfig/network/ifcfg-%s' % dev
+        if os.path.isfile(filename):
+            os.remove(filename)
+
+    @classmethod
+    def write_default_route_config(cls, ip):
+        cls.remove_default_route_config()
+        try:
+            with open(cls.NETWORK_FILE, 'a') as f:
+                f.write('default %s - - \n' % ip)
+        except Exception as e:
+            log.debug('write default route config error: %r' % e)
+            return False
+        return True
+
+    @classmethod
+    def remove_default_route_config(cls):
+        args = ['/bin/sed', '-i', r'/default.*/d', cls.NETWORK_FILE]
+        if not call_system_check(args):
+            log.debug('remove default route config error')
+            return False
+        return True
+
+    @classmethod
+    def init_dns_config(cls):
+        try:
+            if not os.path.isfile('/etc/resolv.conf'):
+                with open('/etc/resolv.conf', 'w') as f:
+                    f.write('nameserver %s' % DNS)
+        except Exception as e:
+            log.debug('init dns error (%s)' % e)
+            return False
+        return True
+
+
+class ArchOperations(LinuxOperations):
+    IFCFG_STR = """[Match]
+Name=%s
+
+[Network]
+Address=%s
+"""
+    NETWORK_FILE = '/etc/systemd/network/%s.network'
+
+    @classmethod
+    def write_ip_config(cls, dev, ip):
+        f = open('/etc/systemd/network/%s.network' % dev, 'w')
+        f.write(cls.IFCFG_STR % (dev, ip))
+        f.close()
+        return True
+
+    @classmethod
+    def remove_ip_config(cls, dev):
+        filename = '/etc/systemd/network/%s.network' % dev
+        if os.path.isfile(filename):
+            os.remove(filename)
+
+    @classmethod
+    def write_default_route_config(cls, dev, ip):
+        cls.remove_default_route_config(dev)
+        try:
+            with open(cls.NETWORK_FILE % dev, 'a') as f:
+                f.write('Gateway=%s' % ip)
+        except Exception as e:
+            log.debug('write default route config error: %r' % e)
+            return False
+        return True
+
+    @classmethod
+    def remove_default_route_config(cls, dev):
+        args = ['/bin/sed', '-i', r'/Gateway=.*/d', cls.NETWORK_FILE % dev]
+        if not call_system_check(args):
+            log.debug('remove default route config error')
+            return False
+        return True
+
+    @classmethod
+    def init_dns_config(cls):
+        try:
+            if not os.path.isfile('/etc/resolv.conf'):
+                with open('/etc/resolv.conf', 'w') as f:
+                    f.write('nameserver %s' % DNS)
+        except Exception as e:
+            log.debug('init dns error (%s)' % e)
+            return False
+        return True
+
+
 class DebianOperations(LinuxOperations):
     LOCFG_STR = """auto lo
 iface lo inet loopback

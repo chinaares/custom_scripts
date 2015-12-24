@@ -111,7 +111,10 @@ if __name__ == '__main__':
         daemonize()
 
     signal.signal(signal.SIGTERM, sigterm_handler)
-
+    
+    if os.path.exists('/etc/arch-release'):
+        dist = 'arch'
+    
     if dist in ['centos', 'redhat']:
         try:
             from lb_operations import LBCentOSOperations
@@ -137,6 +140,18 @@ if __name__ == '__main__':
         UbuntuOperations.apply_config()
         UbuntuOperations.init_dns_config()
         server.register_instance(UbuntuFunctions())
+    elif dist == 'suse':
+        from operations import SuseOperations
+        from functions import SuseFunctions
+        SuseOperations.apply_config()
+        SuseOperations.init_dns_config()
+        server.register_instance(SuseFunctions())
+    elif dist == 'arch':
+        from operations import ArchOperations
+        from functions import ArchFunctions
+        ArchOperations.apply_config()
+        ArchOperations.init_dns_config()
+        server.register_instance(ArchFunctions())
     else:
         sys.stderr.write('System (%s) not supported\n' % (dist))
         sys.exit(-1)

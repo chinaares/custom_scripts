@@ -2,15 +2,49 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import os
+import datetime
 
 import win32serviceutil
 import win32service
 import win32event
 from functions import Handler, Server
+from config import Config
 
 
 PORT = 12345
 log = logging.getLogger(__name__)
+log_level = logging.DEBUG
+log_filename = os.path.dirname(os.path.realpath(__file__)) + '/vagent.log'
+
+
+log_formatter = logging.Formatter('%(asctime)s %(levelname)s '
+                                  '%(module)s.%(funcName)s: %(message)s')
+log_handler = logging.FileHandler(log_filename)
+log_handler.setFormatter(log_formatter)
+logger = logging.getLogger(__name__)
+logger.setLevel(log_level)
+logger.addHandler(log_handler)
+logger = logging.getLogger('config')
+logger.setLevel(log_level)
+logger.addHandler(log_handler)
+logger = logging.getLogger('functions')
+logger.setLevel(log_level)
+logger.addHandler(log_handler)
+logger = logging.getLogger('operations')
+logger.setLevel(log_level)
+logger.addHandler(log_handler)
+logger = logging.getLogger('lb_functions')
+logger.setLevel(log_level)
+logger.addHandler(log_handler)
+logger = logging.getLogger('lb_operations')
+logger.setLevel(log_level)
+logger.addHandler(log_handler)
+
+Config.filename = \
+        os.path.dirname(os.path.realpath(__file__)) + '/config.xml'
+Config.read_conf()
+Config.write_conf()
 
 
 class HttpServerManager(win32serviceutil.ServiceFramework):
@@ -32,6 +66,7 @@ class HttpServerManager(win32serviceutil.ServiceFramework):
 
     def SvcDoRun(self):
         import servicemanager
+        log.info("vagent start.... %s " % datetime.datetime.now()) 
         servicemanager.LogMsg(servicemanager.EVENTLOG_INFORMATION_TYPE,
                               servicemanager.PYS_SERVICE_STARTED,
                               (self._svc_name_, ''))
