@@ -546,12 +546,14 @@ oss_add_IP_template()
     done
     $MT template.config name=centos6.5 ttype=VM domain=$OSS_DOMAIN vendor=YUNSHAN
     $MT template.config name=centos7.0 ttype=VM domain=$OSS_DOMAIN vendor=YUNSHAN
+    $MT template.config name=centos6.6-gui ttype=VM domain=$OSS_DOMAIN vendor=YUNSHAN
     $MT template.config name=ubuntu12.04 ttype=VM domain=$OSS_DOMAIN vendor=YUNSHAN 
     $MT template.config name=ubuntu14.04 ttype=VM domain=$OSS_DOMAIN vendor=YUNSHAN 
+    $MT template.config name=debian8.2 ttype=VM domain=$OSS_DOMAIN vendor=YUNSHAN 
     $MT template.config name=centos6.5-lb ttype=LoadBalancer domain=$OSS_DOMAIN vendor=YUNSHAN
-    $MT template.config name=_01_Windows2012_02_64Bit_05_CnEnterprise \
-        ttype=VM domain=$OSS_DOMAIN vendor=YUNSHAN
     $MT template.config name=_01_Windows2008CN_02_64Bit_05_CnEnterprise \
+        ttype=VM domain=$OSS_DOMAIN vendor=YUNSHAN
+    $MT template.config name=_01_Windows2012CN_02_64Bit_05_CnEnterprise \
         ttype=VM domain=$OSS_DOMAIN vendor=YUNSHAN
     $MT template.config name=template-Topsec-vfw-4.0-new ttype=Firewall domain=$OSS_DOMAIN vendor=TOPSEC
     $MT storage.list | awk '/SR_Local/{cmd="mt storage.activate id="$1" host="$7;system(cmd)}'

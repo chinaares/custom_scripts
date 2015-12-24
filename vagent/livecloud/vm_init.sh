@@ -109,6 +109,8 @@ function bind_ctrl_dev_to_eth6() {
 SUBSYSTEM=="net", ACTION=="add", DRIVERS=="?*", ATTR{address}=="$MAC", KERNEL=="eth*", NAME="$DEVICE"
 SUBSYSTEM=="net", ACTION=="add", DRIVERS=="?*", ATTR{address}=="$SRVMAC", KERNEL=="eth*", NAME="eth5"
 string
+	ip link set eth2 down
+	ip link set eth1 down
     udevadm control --reload-rules
     udevadm trigger
     ip link set eth2 name $DEVICE
@@ -168,6 +170,7 @@ NETMASK=`masklen2netmask $MASKLEN`
 string
 
     systemctl restart network
+    ifconfig $DEVICE $IPADDR/$MASKLEN up
 }
 
 function change_debian_ipaddr() {
@@ -197,14 +200,19 @@ function change_ubuntu_ipaddr() {
 
 function change_ipaddr() {
     issue=`cat /etc/issue`
-    if [[ -n "`echo $issue | grep -iE 'centos|red hat|kernel'`" ]]; then
-        change_centos_ipaddr
+    if [[ -n "`echo $issue | grep -iE 'centos|red hat'`" ]]; then
+    	change_centos_ipaddr
     elif [[ -n "`echo $issue | grep -i debian`" ]]; then
         change_debian_ipaddr
     elif [[ -n "`echo $issue | grep -i ubuntu`" ]]; then
         change_ubuntu_ipaddr
     elif [[ -n "`echo $issue | grep -i SUSE`" ]]; then
         change_suse_ipaddr
+    elif [[ -n "`echo $issue | grep -i kernel`" ]]; then
+        release=`cat /etc/redhat-release`
+        if [[ -n "`echo $release | grep -iE 'release\s7'`" ]]; then
+            change_centos7_ipaddr
+        fi
     else
         log "Unknown or not supported system"
     fi
@@ -343,14 +351,12 @@ function install_vagent() {
     cd $directory
 
     issue=`cat /etc/issue`
-    if [[ -n "`echo $issue | grep -iE 'centos|red hat|kernel'`" ]]; then
-        release=`cat /etc/redhat-release`
+    release=`cat /etc/redhat-release`
+    if [[ -n "`echo $issue | grep -iE 'centos|red hat'`" ]]; then
         if [[ -n "`echo $release | grep -iE 'release\s6'`" ]]; then
             config_centos_vagent_respawn
         elif [[ -n "`echo $release | grep -iE 'release\s5'`" ]]; then
             config_centos5_vagent_respawn
-        elif [[ -n "`echo $release | grep -iE 'release\s7'`" ]]; then
-            config_centos7_vagent_respawn
         else
             log "Unknown or not supported RHEL/CentOS"
         fi
@@ -370,6 +376,10 @@ function install_vagent() {
         fi
     elif [[ -n "`echo $issue | grep -i SUSE`" ]]; then
         config_suse_vagent_respawn
+    elif [[ -n "`echo $issue | grep -i kernel`" ]]; then
+        if [[ -n "`echo $release | grep -iE 'release\s7'`" ]]; then
+            config_centos7_vagent_respawn
+        fi
     else
         log "Unknown or not supported system"
     fi
